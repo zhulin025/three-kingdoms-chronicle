@@ -62,6 +62,7 @@ function read(key: string): SaveData | null {
     if (parsed.run?.battle) {
       const battle = parsed.run.battle;
       const level = chapters.flatMap((chapter) => chapter.levels).find((item) => item.id === battle.levelId);
+      battle.playerMaxHp = Math.max(30, battle.playerMaxHp ?? 30, battle.playerHp);
       battle.breachThreshold = level?.battleRules?.breachThreshold ?? battle.breachThreshold ?? 9;
       battle.breachDamage = level?.battleRules?.breachDamage ?? battle.breachDamage ?? 8;
       battle.breachReset = level?.battleRules?.breachReset ?? battle.breachReset ?? 3;
