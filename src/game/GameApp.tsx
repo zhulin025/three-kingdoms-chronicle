@@ -362,6 +362,10 @@ function BattleScreen({ battle, level, settings, tutorialCompleted, onTutorialCo
   return <main className={`battle-screen game-screen battle-${level.background}`}>
     <header className="battle-top"><div className="enemy-title"><small>{level.type === "boss" ? "章回首领" : "敌军"}</small><strong>{level.enemyName}</strong></div><HealthBar value={battle.enemyHp} max={battle.enemyMaxHp} enemy /><div className="battle-top-actions"><button className="icon-button tutorial-replay" aria-label="重播战斗引导" onClick={() => setTutorialStep(0)}><Info /></button><button className="icon-button" aria-label="暂停战斗" onClick={() => setShowPause(true)}><Pause /></button></div></header>
     <div className={`battle-meta ${battle.beat >= battle.maxBeats ? "overtime" : ""}`}><span>{battle.beat >= battle.maxBeats ? battle.beat === battle.maxBeats ? "本拍进入超时" : `超时第 ${battle.beat - battle.maxBeats + 1} 拍` : `第 ${battle.beat}/${battle.maxBeats} 拍`}</span><span>{battle.wind ? <><Wind size={14} />东风</> : "无风"}</span><span>{settings.manualBeat ? "手动军令" : `${countdown} 秒`}</span></div>
+    <section className="breach-panel" aria-label="破阵规则">
+      <div><strong>破阵门槛 ±{battle.breachThreshold}</strong><span>我方到 +{battle.breachThreshold} 打敌帐 {battle.breachDamage}；敌方到 -{battle.breachThreshold} 打我方 {battle.breachDamage}</span></div>
+      <div className="breach-lanes">{battle.lanes.map((lane, index) => <span key={index} className={lane.momentum > 0 ? "positive" : lane.momentum < 0 ? "negative" : ""}>{["上", "中", "下"][index]} {lane.momentum > 0 ? `+${lane.momentum}` : lane.momentum}/{battle.breachThreshold}</span>)}</div>
+    </section>
     {battle.beat >= battle.maxBeats && <div className="overtime-warning" role="alert"><Flame size={17} /><div><strong>{battle.beat === battle.maxBeats ? "本拍结算后进入超时消耗" : "战事正在超时消耗"}</strong><span>每次结算，双方主帐生命各减少 3 点</span></div></div>}
     <Battlefield3D battle={battle} selectedCardId={selected} tutorialStep={tutorialStep} reducedMotion={settings.reducedMotion} onLaneSelect={deploy} onCardDrop={dropCard} />
     <section className="player-command"><div className="player-health"><HealthBar value={battle.playerHp} max={battle.playerMaxHp} /><span className="strategy-orb">谋 {battle.strategy}/{battle.maxStrategy}</span>{battle.sealAvailable && battle.undoSnapshot && <button className="seal-button" onClick={() => onBattle(undoLastPlay(battle))}>朱批撤回</button>}</div><div className={`hand-scroll ${tutorialStep === 1 ? "tutorial-hand-target" : ""}`}>{battle.hand.map((cardId, index) => { const definition = cardById.get(cardId)!; return <button draggable key={`${cardId}-${index}`} onDragStart={(event) => event.dataTransfer.setData("text/card", cardId)} onClick={() => { if (definition.cost > battle.strategy) { feedback("error"); return; } setSelected(selected === cardId ? undefined : cardId); if (tutorialStep === 1) setTutorialStep(2); }} onDoubleClick={() => setShowInfo(cardId)} className={`battle-card card-${definition.color} ${selected === cardId ? "selected" : ""} ${definition.cost > battle.strategy ? "disabled" : ""}`}><span className="card-cost">{definition.cost}</span><small>{definition.kind === "general" ? "将魂" : definition.kind === "stratagem" ? "计策" : definition.tags[0]}</small><strong>{definition.name}</strong>{definition.kind !== "stratagem" && <span className="card-stats">攻 {definition.attack} · 守 {definition.guard}</span>}<p>{definition.description}</p></button>; })}</div><div className="battle-actions"><span>牌堆 {battle.drawPile.length} · 弃牌 {battle.discardPile.length}</span><button className={`gold-button ${tutorialStep === 3 ? "tutorial-command-target" : ""}`} onClick={resolveBeat}>下达军令<ChevronRight size={17} /></button></div></section>
@@ -388,10 +392,77 @@ function HealthBar({ value, max, enemy = false }: { value: number; max: number; 
   return <div className={`health-bar ${enemy ? "enemy" : ""}`}><div style={{ width: `${Math.max(0, Math.min(100, value / max * 100))}%` }} /><span>{value}/{max}</span></div>;
 }
 
+const laneLabels = ["上", "中", "下"] as const;
+
+function laneFromEntry(entry: string): LaneIndex | null {
+  const explicit = entry.match(/[·：](上|中|下)路/);
+  const deployed = entry.match(/入(上|中|下)路/);
+  const label = explicit?.[1] || deployed?.[1];
+  const index = label ? laneLabels.indexOf(label as typeof laneLabels[number]) : -1;
+  return index >= 0 ? index as LaneIndex : null;
+}
+
+function beatFromEntry(entry: string) {
+  const match = entry.match(/第 (\d+) 拍/);
+  return match ? Number(match[1]) : null;
+}
+
+function buildVictoryReport(battle: BattleState) {
+  const chronological = [...battle.log].reverse();
+  let trackedEnemyHp = battle.enemyMaxHp;
+  let winningLane: LaneIndex | null = null;
+  let winningBeat: number | null = null;
+  let timeoutVictoryBeat: number | null = null;
+
+  for (const entry of chronological) {
+    const breach = entry.match(/路破阵：敌帐 -(\d+)/);
+    if (breach) {
+      trackedEnemyHp = Math.max(0, trackedEnemyHp - Number(breach[1]));
+      if (trackedEnemyHp <= 0) {
+        winningLane = laneFromEntry(entry);
+        winningBeat = beatFromEntry(entry);
+        break;
+      }
+    }
+    const timeout = entry.match(/第 (\d+) 拍·超时消耗：敌方主帐 -(\d+)/);
+    if (timeout) {
+      trackedEnemyHp = Math.max(0, trackedEnemyHp - Number(timeout[2]));
+      if (trackedEnemyHp <= 0) {
+        timeoutVictoryBeat = Number(timeout[1]);
+        break;
+      }
+    }
+  }
+
+  if (winningLane !== null && winningBeat !== null) {
+    const entries = chronological.filter((entry) => entry.startsWith("胜利：") || (laneFromEntry(entry) === winningLane && (beatFromEntry(entry) ?? 0) <= winningBeat));
+    return {
+      title: `${laneLabels[winningLane]}路胜利线`,
+      reason: `${laneLabels[winningLane]}路达到 +${battle.breachThreshold} 破阵，造成敌帐伤害，使敌方主帐生命归零。`,
+      entries
+    };
+  }
+
+  if (timeoutVictoryBeat !== null) {
+    return {
+      title: "超时消耗胜利线",
+      reason: `第 ${timeoutVictoryBeat} 拍超时结算扣减双方主帐，敌方主帐先归零。`,
+      entries: chronological.filter((entry) => entry.startsWith("胜利：") || entry.includes(`第 ${timeoutVictoryBeat} 拍·超时消耗`))
+    };
+  }
+
+  return {
+    title: "胜利线",
+    reason: "敌方主帐生命归零后获胜。",
+    entries: chronological
+  };
+}
+
 function RewardScreen({ level, battle, rewards, onPick }: { level: LevelDefinition; battle?: BattleState; rewards: string[]; onPick: (cardId?: string) => void }) {
   const [showReport, setShowReport] = useState(false);
   const breachCount = battle?.log.filter((entry) => entry.includes("路破阵：")).length ?? 0;
-  return <main className="reward-screen game-screen"><span className="seal success">胜</span><span className="eyebrow">战事已定</span><h2>{level.name}</h2><p>{battle ? `第 ${battle.beat} 拍获胜 · 完成 ${breachCount} 次破阵 · 我方主帐 ${battle.playerHp}/${battle.playerMaxHp}` : "敌方主帐生命已归零。"}</p>{battle && <button className="ink-button battle-report-button" onClick={() => setShowReport(true)}><ScrollText size={17} />查看本局战报</button>}<p>获得军功 {level.reward}。从残页中选择一张牌，或保持牌组精简。</p><div className="reward-cards">{rewards.map((id) => <CardTile key={id} card={cardById.get(id)!} onClick={() => onPick(id)} />)}</div><button className="text-button" onClick={() => onPick()}>不取残页，继续前行</button>{showReport && battle && <Modal title={`${level.name} · 战报`} onClose={() => setShowReport(false)}><div className="battle-report-summary"><strong>胜利原因</strong><p>敌方主帐从 {battle.enemyMaxHp} 降至 {battle.enemyHp}，生命归零后获胜。</p><strong>逐拍记录</strong><ol>{battle.log.map((entry, index) => <li key={`${index}-${entry}`}>{entry}</li>)}</ol></div></Modal>}</main>;
+  const report = battle ? buildVictoryReport(battle) : undefined;
+  return <main className="reward-screen game-screen"><span className="seal success">胜</span><span className="eyebrow">战事已定</span><h2>{level.name}</h2><p>{battle ? `第 ${battle.beat} 拍获胜 · 完成 ${breachCount} 次破阵 · 我方主帐 ${battle.playerHp}/${battle.playerMaxHp}` : "敌方主帐生命已归零。"}</p>{battle && <button className="ink-button battle-report-button" onClick={() => setShowReport(true)}><ScrollText size={17} />查看胜利线战报</button>}<p>获得军功 {level.reward}。从残页中选择一张牌，或保持牌组精简。</p><div className="reward-cards">{rewards.map((id) => <CardTile key={id} card={cardById.get(id)!} onClick={() => onPick(id)} />)}</div><button className="text-button" onClick={() => onPick()}>不取残页，继续前行</button>{showReport && battle && report && <Modal title={`${level.name} · 战报`} onClose={() => setShowReport(false)}><div className="battle-report-summary"><strong>胜利原因</strong><p>{report.reason}</p><strong>{report.title}</strong><ol>{report.entries.map((entry, index) => <li key={`${index}-${entry}`}>{entry}</li>)}</ol></div></Modal>}</main>;
 }
 
 function CampScreen({ run, onRestoreSeal, onUpgrade, onDeck, onLeave }: { run: NonNullable<SaveData["run"]>; onRestoreSeal: () => void; onUpgrade: () => void; onDeck: () => void; onLeave: () => void }) {
