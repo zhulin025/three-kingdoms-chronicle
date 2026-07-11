@@ -21,8 +21,6 @@ export function createNewRun() {
   return {
     chapterIndex: 0,
     nodeIndex: 0,
-    hp: 30,
-    maxHp: 30,
     merit: 0,
     deck: [...starterDeck],
     upgradedCards: [],
@@ -62,7 +60,11 @@ function read(key: string): SaveData | null {
     if (parsed.run?.battle) {
       const battle = parsed.run.battle;
       const level = chapters.flatMap((chapter) => chapter.levels).find((item) => item.id === battle.levelId);
-      battle.playerMaxHp = Math.max(30, battle.playerMaxHp ?? 30, battle.playerHp);
+      if (level) {
+        battle.playerMaxHp = level.enemyHp;
+        battle.playerHp = Math.min(battle.playerHp, level.enemyHp);
+      }
+      battle.firstBreachGuard = battle.firstBreachGuard ?? 0;
       battle.breachThreshold = level?.battleRules?.breachThreshold ?? battle.breachThreshold ?? 9;
       battle.breachDamage = level?.battleRules?.breachDamage ?? battle.breachDamage ?? 8;
       battle.breachReset = level?.battleRules?.breachReset ?? battle.breachReset ?? 3;

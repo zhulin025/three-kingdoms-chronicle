@@ -11,17 +11,31 @@ assert.equal(new Set(chapters.flatMap((chapter) => chapter.levels.map((level) =>
 starterDeck.forEach((id) => assert.ok(cardById.has(id), `starter card ${id} must exist`));
 
 const level = chapters[0].levels[0];
-const first = createBattle(level, starterDeck, [], 30, true, undefined, 20260710);
-const second = createBattle(level, starterDeck, [], 30, true, undefined, 20260710);
+const first = createBattle(level, starterDeck, [], true, undefined, 20260710);
+const second = createBattle(level, starterDeck, [], true, undefined, 20260710);
 assert.equal(battleHash(first), battleHash(second), "same seed must create identical battles");
 assert.equal(first.breachThreshold, 6, "tutorial battle must use a shorter breach track");
 assert.equal(first.breachDamage, 10, "tutorial battle must end after one clean breach");
 assert.equal(first.enemyHp, 10, "tutorial enemy must fall after demonstrating one full breach");
 assert.equal(first.strategy, 3, "tutorial battle must let the player combine cards immediately");
 assert.equal(first.intent.length, 1, "tutorial battle must present one enemy decision at a time");
-const resilient = createBattle(level, starterDeck, [], 33, true, "坚心", 20260710);
-assert.equal(resilient.playerHp, 33, "resilient annotation must preserve its bonus health");
-assert.equal(resilient.playerMaxHp, 33, "displayed maximum health must include bonus health");
+const resilient = createBattle(level, starterDeck, [], true, "坚心", 20260710);
+assert.equal(resilient.playerHp, resilient.enemyHp, "each battle must begin with equal command health");
+assert.equal(resilient.playerMaxHp, resilient.enemyMaxHp, "both sides must use the same health cap");
+assert.equal(resilient.firstBreachGuard, 3, "resilient annotation must reduce the first breach instead of adding health");
+for (const chapter of chapters) {
+  for (const combat of chapter.levels.filter((item) => item.type !== "camp")) {
+    const battle = createBattle(combat, starterDeck, [], true, undefined, 20260710);
+    assert.equal(battle.playerHp, battle.enemyHp, `${combat.id} must start with equal health`);
+    assert.equal(battle.playerMaxHp, battle.enemyMaxHp, `${combat.id} must use equal health caps`);
+  }
+}
+const guardedBreach = structuredClone(resilient);
+guardedBreach.intent = [];
+guardedBreach.lanes[0].momentum = -guardedBreach.breachThreshold;
+const afterGuardedBreach = endBeat(guardedBreach, level);
+assert.equal(afterGuardedBreach.playerHp, 3, "resilient annotation must reduce the first 10-damage breach to 7");
+assert.equal(afterGuardedBreach.firstBreachGuard, 0, "resilient guard must be consumed after the first breach");
 
 let firstReplay = structuredClone(first);
 let secondReplay = structuredClone(second);
@@ -53,7 +67,7 @@ overtime.enemyHp = 3;
 overtime.beat = overtime.maxBeats;
 overtime = endBeat(overtime, level);
 assert.equal(overtime.enemyHp, 0, "overtime must damage the enemy to accelerate battle resolution");
-assert.equal(overtime.playerHp, 27, "overtime must apply the same damage to the player");
+assert.equal(overtime.playerHp, 7, "overtime must apply the same damage to the player");
 assert.equal(overtime.result, "victory", "overtime may end a battle when enemy HP reaches zero");
 assert.ok(overtime.log.some((entry) => entry.includes("超时消耗使敌方主帐生命归零")), "overtime victory must explain its cause in the battle report");
 

@@ -68,7 +68,7 @@ function drawCards(state: BattleState, count: number) {
   }
 }
 
-export function createBattle(level: LevelDefinition, deck: string[], upgradedCards: string[], hp = 30, sealAvailable = true, annotation?: string, seedOverride?: number): BattleState {
+export function createBattle(level: LevelDefinition, deck: string[], upgradedCards: string[], sealAvailable = true, annotation?: string, seedOverride?: number): BattleState {
   const seed = seedOverride ?? Math.abs(hashString(`${level.id}:${Date.now()}:${deck.join(",")}`));
   const shuffled = shuffle(deck, seed);
   const state: BattleState = {
@@ -81,8 +81,9 @@ export function createBattle(level: LevelDefinition, deck: string[], upgradedCar
     breachDamage: level.battleRules?.breachDamage ?? defaultBreachDamage,
     breachReset: level.battleRules?.breachReset ?? defaultBreachReset,
     strategyRecovery: level.battleRules?.strategyRecovery ?? 2,
-    playerHp: hp,
-    playerMaxHp: Math.max(30, hp),
+    firstBreachGuard: annotation === "坚心" ? 3 : 0,
+    playerHp: level.enemyHp,
+    playerMaxHp: level.enemyHp,
     enemyHp: level.enemyHp,
     enemyMaxHp: level.enemyHp,
     strategy: Math.min(5, (level.battleRules?.startingStrategy ?? 2) + (annotation === "足智" ? 1 : 0)),
@@ -235,9 +236,12 @@ export function endBeat(input: BattleState, level: LevelDefinition): BattleState
       state.log.unshift(`第 ${state.beat} 拍·${["上", "中", "下"][laneIndex]}路破阵：敌帐 -${state.breachDamage + ramBonus}`);
     }
     if (lane.momentum <= -state.breachThreshold) {
-      state.playerHp = Math.max(0, state.playerHp - state.breachDamage);
+      const guard = Math.min(state.firstBreachGuard, state.breachDamage);
+      const damage = state.breachDamage - guard;
+      state.playerHp = Math.max(0, state.playerHp - damage);
+      state.firstBreachGuard = 0;
       lane.momentum = -state.breachReset;
-      state.log.unshift(`第 ${state.beat} 拍·${["上", "中", "下"][laneIndex]}路失守：我方主帐 -${state.breachDamage}`);
+      state.log.unshift(`第 ${state.beat} 拍·${["上", "中", "下"][laneIndex]}路失守：我方主帐 -${damage}${guard ? `（坚心减免 ${guard}）` : ""}`);
     }
     lane.playerPower = 0;
     lane.enemyPower = 0;
@@ -280,6 +284,7 @@ export function undoLastPlay(input: BattleState): BattleState {
   if (!input.sealAvailable || !input.undoSnapshot) return input;
   try {
     const restored = JSON.parse(input.undoSnapshot) as BattleState;
+    restored.firstBreachGuard ??= input.firstBreachGuard ?? 0;
     restored.sealAvailable = false;
     restored.undoSnapshot = undefined;
     restored.log.unshift("朱批：撤回上一道军令");
@@ -290,7 +295,7 @@ export function undoLastPlay(input: BattleState): BattleState {
 }
 
 export function battleHash(state: BattleState) {
-  return hashString(JSON.stringify({ beat: state.beat, hp: [state.playerHp, state.enemyHp], strategy: state.strategy, hand: state.hand, draw: state.drawPile, lanes: state.lanes.map((lane) => [lane.momentum, lane.burn, lane.wet]), cursor: state.rngCursor, result: state.result }));
+  return hashString(JSON.stringify({ beat: state.beat, hp: [state.playerHp, state.enemyHp], guard: state.firstBreachGuard, strategy: state.strategy, hand: state.hand, draw: state.drawPile, lanes: state.lanes.map((lane) => [lane.momentum, lane.burn, lane.wet]), cursor: state.rngCursor, result: state.result }));
 }
 
 export function pickDeterministic<T>(items: T[], seed: number, count: number) {

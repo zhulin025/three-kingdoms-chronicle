@@ -69,6 +69,7 @@ export interface BattleState {
   breachDamage: number;
   breachReset: number;
   strategyRecovery: number;
+  firstBreachGuard: number;
   playerHp: number;
   playerMaxHp: number;
   enemyHp: number;
@@ -127,8 +128,6 @@ export interface ChapterDefinition {
 export interface RunState {
   chapterIndex: number;
   nodeIndex: number;
-  hp: number;
-  maxHp: number;
   merit: number;
   deck: string[];
   upgradedCards: string[];

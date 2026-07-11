@@ -11,7 +11,7 @@ import type { BattleState, CardDefinition, GameScreen, LaneIndex, LevelDefinitio
 const annotations = [
   { id: "博闻", title: "博闻强记", detail: "下一次战役起始手牌 +1" },
   { id: "足智", title: "谋定后动", detail: "下一次战役起始谋略 +1" },
-  { id: "坚心", title: "败而不馁", detail: "下一次战役主帐生命 +3" }
+  { id: "坚心", title: "败而不馁", detail: "下一次战役首次失守伤害 -3" }
 ];
 
 export function GameApp() {
@@ -48,10 +48,6 @@ export function GameApp() {
   const startNewRun = (annotation?: string) => {
     updateSave((next) => {
       next.run = { ...createNewRun(), annotation };
-      if (annotation === "坚心") {
-        next.run.hp = 33;
-        next.run.maxHp = 33;
-      }
       next.stats.runsStarted += 1;
       return next;
     });
@@ -87,7 +83,7 @@ export function GameApp() {
     if (!save.run) return;
     updateSave((next) => {
       if (!next.run) return next;
-      next.run.battle = createBattle(level, next.run.deck, next.run.upgradedCards, next.run.hp, next.run.sealCount > 0, next.run.annotation);
+      next.run.battle = createBattle(level, next.run.deck, next.run.upgradedCards, next.run.sealCount > 0, next.run.annotation);
       next.run.annotation = undefined;
       return next;
     });
@@ -108,7 +104,6 @@ export function GameApp() {
       feedback("success");
       updateSave((next) => {
         if (!next.run?.battle) return next;
-        next.run.hp = next.run.battle.playerHp;
         next.run.merit += activeLevel.reward;
         next.run.completedLevelIds.push(activeLevel.id);
         if (!next.run.battle.sealAvailable) next.run.sealCount = Math.max(0, next.run.sealCount - 1);
@@ -186,9 +181,8 @@ export function GameApp() {
     updateSave((next) => {
       if (!next.run) return next;
       if (choice === "safe") {
-        next.run.hp = Math.min(next.run.maxHp, next.run.hp + 4);
+        next.run.sealCount = Math.min(2, next.run.sealCount + 1);
       } else {
-        next.run.hp = Math.max(5, next.run.hp - 5);
         const pool = rewardPools[chapter.id];
         const reward = pickDeterministic(pool, next.run.chapterIndex * 100 + next.run.nodeIndex, 1)[0];
         if (reward && !next.run.deck.includes(reward)) {
@@ -230,7 +224,7 @@ export function GameApp() {
       {screen === "story" && <StoryScreen chapter={chapter} level={activeLevel} mode={storyMode} onBack={() => setScreen(run ? "map" : "title")} onContinue={() => storyMode === "intro" ? setScreen("map") : eventChoice("safe")} onRisk={() => eventChoice("risk")} />}
       {screen === "battle" && run?.battle && <BattleScreen battle={run.battle} level={activeLevel} settings={save.settings} tutorialCompleted={save.tutorialCompleted} onTutorialComplete={() => updateSave((next) => { next.tutorialCompleted = true; return next; })} onBattle={updateBattle} onFinish={finishBattle} onRetreat={() => setScreen("map")} onDefeat={(annotation) => startNewRun(annotation)} feedback={feedback} />}
       {screen === "reward" && <RewardScreen level={activeLevel} battle={run?.battle} rewards={selectedReward} onPick={takeReward} />}
-      {screen === "camp" && run && <CampScreen run={run} onHeal={() => updateSave((next) => { if (next.run && next.run.merit >= 30) { next.run.merit -= 30; next.run.hp = Math.min(next.run.maxHp, next.run.hp + 8); } return next; })} onUpgrade={() => updateSave((next) => { if (!next.run || next.run.merit < 40) return next; const target = next.run.deck.find((id) => !next.run!.upgradedCards.includes(id)); if (target) { next.run.merit -= 40; next.run.upgradedCards.push(target); } return next; })} onDeck={() => setScreen("deck")} onLeave={finishCamp} />}
+      {screen === "camp" && run && <CampScreen run={run} onRestoreSeal={() => updateSave((next) => { if (next.run && next.run.merit >= 30 && next.run.sealCount < 2) { next.run.merit -= 30; next.run.sealCount += 1; } return next; })} onUpgrade={() => updateSave((next) => { if (!next.run || next.run.merit < 40) return next; const target = next.run.deck.find((id) => !next.run!.upgradedCards.includes(id)); if (target) { next.run.merit -= 40; next.run.upgradedCards.push(target); } return next; })} onDeck={() => setScreen("deck")} onLeave={finishCamp} />}
       {screen === "settings" && <SettingsScreen save={save} onBack={() => setScreen(run ? "desk" : "title")} onChange={(key) => updateSave((next) => { next.settings[key] = !next.settings[key]; return next; })} onReset={resetAll} />}
       {screen === "ending" && <EndingScreen onDesk={() => setScreen("desk")} onAgain={() => startNewRun()} />}
       {toast && <div className="game-toast" role="status">{toast}</div>}
@@ -261,7 +255,7 @@ function DeskScreen({ save, onContinue, onCodex, onSettings }: { save: SaveData;
     <Header title="司史书案" right={<button className="icon-button" onClick={onSettings}><Settings size={20} /></button>} />
     <section className="desk-hero">
       <span className="seal">史</span>
-      <div><span className="eyebrow">演义原卷</span><h2>{save.run ? chapters[save.run.chapterIndex]?.name || "原卷已复" : "等待落笔"}</h2><p>{save.run ? `当前来到第 ${save.run.nodeIndex + 1} 节，主帐 ${save.run.hp}/${save.run.maxHp}` : "三枚原文印仍散落在崩坏的章回中。"}</p></div>
+      <div><span className="eyebrow">演义原卷</span><h2>{save.run ? chapters[save.run.chapterIndex]?.name || "原卷已复" : "等待落笔"}</h2><p>{save.run ? `当前来到第 ${save.run.nodeIndex + 1} 节，每场战斗双方主帐重新整备` : "三枚原文印仍散落在崩坏的章回中。"}</p></div>
     </section>
     <button className="scroll-entry primary-scroll" onClick={onContinue}><div><strong>{save.run ? "继续战役" : "新开残卷"}</strong><span>{save.run ? "回到九章战图" : "从桃园残誓开始"}</span></div><ChevronRight /></button>
     <div className="desk-grid">
@@ -281,7 +275,7 @@ function Header({ title, onBack, right }: { title: string; onBack?: () => void; 
 function MapScreen({ chapter, run, activeLevel, onBack, onEnter, onDeck }: { chapter: typeof chapters[number]; run: NonNullable<SaveData["run"]>; activeLevel: LevelDefinition; onBack: () => void; onEnter: () => void; onDeck: () => void }) {
   return <main className={`map-screen game-screen theme-${chapter.id}`}>
     <Header title={chapter.name} onBack={onBack} right={<button className="resource-pill" onClick={onDeck}>牌组 {run.deck.length}</button>} />
-    <div className="run-status"><span><Heart size={15} />{run.hp}/{run.maxHp}</span><span>军功 {run.merit}</span><span>朱批 {run.sealCount}</span></div>
+    <div className="run-status"><span><Heart size={15} />{activeLevel.type === "camp" ? "本节点整备" : `本关敌我 ${activeLevel.enemyHp}/${activeLevel.enemyHp}`}</span><span>军功 {run.merit}</span><span>朱批 {run.sealCount}</span></div>
     <section className="chapter-intro"><span>{chapter.subtitle}</span><p>{chapter.intro}</p></section>
     <div className="node-path">
       {chapter.levels.map((level, index) => {
@@ -298,11 +292,11 @@ function MapScreen({ chapter, run, activeLevel, onBack, onEnter, onDeck }: { cha
 }
 
 function StoryScreen({ chapter, level, mode, onBack, onContinue, onRisk }: { chapter: typeof chapters[number]; level: LevelDefinition; mode: "intro" | "event"; onBack: () => void; onContinue: () => void; onRisk: () => void }) {
-  const eventText = chapter.id === "peach" ? "破损的誓书落在饥民营中。你可以先护住百姓，也可以用自己的血重新显出被涂掉的名字。" : chapter.id === "changban" ? "渡口只剩一条船。先送百姓会让追骑逼近；断桥迎敌，则能从敌阵夺回一页强力残章。" : "黄盖把火种放在你面前。承受苦肉之痛可以换来火攻残章，但这份批注会立刻削弱主帐。";
+  const eventText = chapter.id === "peach" ? "破损的誓书落在饥民营中。你可以先护住百姓，换取一枚朱批；也可以冒险追查墨迹，夺回一页残章。" : chapter.id === "changban" ? "渡口只剩一条船。先送百姓可以获得一枚朱批；断桥迎敌，则能从敌阵夺回一页强力残章。" : "黄盖把火种放在你面前。稳住军心可以获得一枚朱批；执行险计，则可能换来火攻残章。";
   return <main className={`story-screen game-screen theme-${chapter.id}`}>
     <Header title={mode === "intro" ? chapter.name : level.name} onBack={onBack} />
     <div className="story-ink" aria-hidden="true"><span>卷</span></div>
-    <article className="story-paper"><span className="eyebrow">{mode === "intro" ? "章回开篇" : "残页抉择"}</span><h2>{mode === "intro" ? chapter.subtitle : level.subtitle}</h2><p>{mode === "intro" ? chapter.intro : eventText}</p>{mode === "intro" ? <button className="gold-button" onClick={onContinue}>展开战图</button> : <div className="choice-list"><button onClick={onContinue}><strong>先护生民</strong><span>主帐恢复 4，不取额外卡牌</span></button><button onClick={onRisk}><strong>以血显名</strong><span>主帐 -5，获得本卷额外卡牌</span></button></div>}</article>
+    <article className="story-paper"><span className="eyebrow">{mode === "intro" ? "章回开篇" : "残页抉择"}</span><h2>{mode === "intro" ? chapter.subtitle : level.subtitle}</h2><p>{mode === "intro" ? chapter.intro : eventText}</p>{mode === "intro" ? <button className="gold-button" onClick={onContinue}>展开战图</button> : <div className="choice-list"><button onClick={onContinue}><strong>稳妥行事</strong><span>朱批 +1，最多持有 2 枚</span></button><button onClick={onRisk}><strong>冒险取页</strong><span>获得或升级一张本卷卡牌</span></button></div>}</article>
   </main>;
 }
 
@@ -400,8 +394,8 @@ function RewardScreen({ level, battle, rewards, onPick }: { level: LevelDefiniti
   return <main className="reward-screen game-screen"><span className="seal success">胜</span><span className="eyebrow">战事已定</span><h2>{level.name}</h2><p>{battle ? `第 ${battle.beat} 拍获胜 · 完成 ${breachCount} 次破阵 · 我方主帐 ${battle.playerHp}/${battle.playerMaxHp}` : "敌方主帐生命已归零。"}</p>{battle && <button className="ink-button battle-report-button" onClick={() => setShowReport(true)}><ScrollText size={17} />查看本局战报</button>}<p>获得军功 {level.reward}。从残页中选择一张牌，或保持牌组精简。</p><div className="reward-cards">{rewards.map((id) => <CardTile key={id} card={cardById.get(id)!} onClick={() => onPick(id)} />)}</div><button className="text-button" onClick={() => onPick()}>不取残页，继续前行</button>{showReport && battle && <Modal title={`${level.name} · 战报`} onClose={() => setShowReport(false)}><div className="battle-report-summary"><strong>胜利原因</strong><p>敌方主帐从 {battle.enemyMaxHp} 降至 {battle.enemyHp}，生命归零后获胜。</p><strong>逐拍记录</strong><ol>{battle.log.map((entry, index) => <li key={`${index}-${entry}`}>{entry}</li>)}</ol></div></Modal>}</main>;
 }
 
-function CampScreen({ run, onHeal, onUpgrade, onDeck, onLeave }: { run: NonNullable<SaveData["run"]>; onHeal: () => void; onUpgrade: () => void; onDeck: () => void; onLeave: () => void }) {
-  return <main className="camp-screen game-screen"><Header title="营帐整备" /><div className="campfire"><Flame /></div><h2>火未熄，卷未尽</h2><p>军功 {run.merit} · 主帐 {run.hp}/{run.maxHp}</p><div className="service-list"><button disabled={run.merit < 30 || run.hp >= run.maxHp} onClick={onHeal}><Heart /><div><strong>包扎伤势</strong><span>30 军功 · 恢复 8 主帐生命</span></div></button><button disabled={run.merit < 40 || run.upgradedCards.length >= new Set(run.deck).size} onClick={onUpgrade}><Sparkles /><div><strong>研习残章</strong><span>40 军功 · 升级一张未升级卡</span></div></button><button onClick={onDeck}><BookOpen /><div><strong>整理牌组</strong><span>查看、删除和确认 12 张出战牌</span></div></button></div><button className="gold-button" onClick={onLeave}>收帐启程</button></main>;
+function CampScreen({ run, onRestoreSeal, onUpgrade, onDeck, onLeave }: { run: NonNullable<SaveData["run"]>; onRestoreSeal: () => void; onUpgrade: () => void; onDeck: () => void; onLeave: () => void }) {
+  return <main className="camp-screen game-screen"><Header title="营帐整备" /><div className="campfire"><Flame /></div><h2>火未熄，卷未尽</h2><p>军功 {run.merit} · 朱批 {run.sealCount}/2</p><div className="service-list"><button disabled={run.merit < 30 || run.sealCount >= 2} onClick={onRestoreSeal}><ScrollText /><div><strong>重整军令</strong><span>30 军功 · 恢复 1 枚朱批</span></div></button><button disabled={run.merit < 40 || run.upgradedCards.length >= new Set(run.deck).size} onClick={onUpgrade}><Sparkles /><div><strong>研习残章</strong><span>40 军功 · 升级一张未升级卡</span></div></button><button onClick={onDeck}><BookOpen /><div><strong>整理牌组</strong><span>查看、删除和确认 12 张出战牌</span></div></button></div><button className="gold-button" onClick={onLeave}>收帐启程</button></main>;
 }
 
 function DeckScreen({ save, mode, onBack, onRemove, onFinish }: { save: SaveData; mode: "run" | "codex"; onBack: () => void; onRemove?: (index: number) => void; onFinish?: () => void }) {
