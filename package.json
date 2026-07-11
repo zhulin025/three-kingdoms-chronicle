@@ -1,0 +1,36 @@
+{
+  "name": "three-kingdoms-chronicle",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "rm -rf dist && tsc && vite build",
+    "build:ios": "rm -rf dist-ios ios/App/App/public && tsc && vite build --outDir dist-ios && CAP_WEB_DIR=dist-ios npx cap sync ios && node scripts/localize-ios-spm.mjs",
+    "ios:open": "npx cap open ios",
+    "ios:run": "npm run build:ios && npx cap run ios",
+    "test": "tsx scripts/verify-game.ts"
+  },
+  "dependencies": {
+    "@capacitor/app": "^8.1.0",
+    "@capacitor/core": "^8.4.0",
+    "@capacitor/haptics": "^8.0.2",
+    "@capacitor/share": "^8.0.1",
+    "lucide-react": "^0.542.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "three": "^0.185.1"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.4.0",
+    "@capacitor/ios": "^8.4.0",
+    "@types/node": "^24.3.0",
+    "@types/react": "^19.1.12",
+    "@types/react-dom": "^19.1.9",
+    "@types/three": "^0.185.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "vite": "^8.0.16"
+  }
+}
